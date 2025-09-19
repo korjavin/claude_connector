@@ -47,8 +47,10 @@ jobs:
           git push origin deploy --force
 
       - name: Trigger Portainer Redeploy Webhook
-        if: secrets.PORTAINER_REDEPLOY_HOOK != ''
-        uses: distributhor/workflow-webhook@v3
-        with:
-          webhook_url: ${{ secrets.PORTAINER_REDEPLOY_HOOK }}
-          webhook_secret: "trigger"
+        if: ${{ secrets.PORTAINER_REDEPLOY_HOOK }}
+        run: |
+          curl -X POST "${{ secrets.PORTAINER_REDEPLOY_HOOK }}" \
+            -H "Content-Type: application/json" \
+            -d '{"source": "github-actions", "commit": "${{ github.sha }}"}' \
+            --fail --silent --show-error || echo "Webhook call failed, but continuing"
+          echo "Portainer webhook triggered"
