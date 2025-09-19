@@ -1,0 +1,2 @@
+# This file ensures the data directory is included in git
+# but the actual CSV files are ignored for security

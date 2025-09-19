@@ -1,4 +1,4 @@
-module github.com/user/claude-connector
+module github.com/korjavin/claude_connector
 
 go 1.25.1
 

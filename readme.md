@@ -50,8 +50,17 @@ CSV_FILE_PATH=/data/medical_data.csv
 - A server with a public IP address.
 - A custom domain managed by Cloudflare.
 - (Optional but recommended) Portainer for managing the Docker deployment.
+- GitHub repository with Actions enabled for CI/CD.
 
-### Deployment Steps
+### Docker Compose Files
+
+This project includes three docker-compose configurations:
+
+- **`docker-compose.yml`** - Production deployment with GitHub Container Registry images and named volumes
+- **`docker-compose.dev.yml`** - Local development with local build and `./data` directory mount
+- **`docker-compose.prod.yml`** - Production-ready with health checks and explicit environment variables
+
+### Manual Deployment Steps
 
 1. **Clone the Repository**:
    ```bash
@@ -66,14 +75,62 @@ CSV_FILE_PATH=/data/medical_data.csv
 3. **Deploy with Docker Compose**:
    From the project's root directory, run the following command:
    ```bash
-   docker compose up --build -d
+   # For local development (uses ./data directory)
+   docker compose -f docker-compose.dev.yml up --build -d
+
+   # For production (uses named volume bound to /opt/claude-connector/data)
+   docker compose up -d
    ```
-   This command will build the Docker image and start the service in detached mode.
 
 4. **Configure Cloudflare and Portainer**:
    Follow the detailed instructions in [guide.md](guide.md) to:
    - Set up an A record in Cloudflare pointing your subdomain to your server's IP.
    - (If using Portainer) Deploy the stack using the Portainer UI for easier management.
+
+### Automated CI/CD Deployment
+
+This project includes a complete CI/CD pipeline using GitHub Actions that automatically builds, pushes to GitHub Container Registry (GHCR), and deploys your application.
+
+#### Setup Steps:
+
+1. **Configure Repository Settings**:
+   - In your GitHub repository, go to Settings > Actions > General
+   - Ensure "Read and write permissions" are enabled for GITHUB_TOKEN
+
+2. **Update docker-compose.yml**:
+   Replace the placeholders in `docker-compose.yml`:
+   - `korjavin` is already set as the GitHub username
+   - `claude-connector.your-domain.com` → Your actual domain
+   - `claude-network` → Your Docker network name (optional)
+
+3. **Set up Portainer Webhook (Optional)**:
+   - In Portainer, create a webhook for your stack
+   - Add the webhook URL as a GitHub secret named `PORTAINER_REDEPLOY_HOOK`
+
+4. **Configure Traefik Labels (Optional)**:
+   If using Traefik for reverse proxy, the docker-compose.yml already includes appropriate labels. Adjust as needed for your setup.
+
+#### How it Works:
+
+1. **Trigger**: Push to `main` branch or manual workflow dispatch
+2. **Build**: GitHub Actions builds the Docker image with embedded commit SHA
+3. **Push**: Image is pushed to GitHub Container Registry (ghcr.io)
+4. **Deploy**: Updates `docker-compose.yml` in `deploy` branch with new image tag
+5. **Redeploy**: (Optional) Triggers Portainer webhook to pull and restart containers
+
+#### Image Tagging:
+
+- Each build creates two tags:
+  - `ghcr.io/korjavin/claude_connector:$COMMIT_SHA` (specific version)
+  - `ghcr.io/korjavin/claude_connector:latest` (latest version)
+
+#### Manual Deployment from GHCR:
+
+To deploy a specific version manually:
+```bash
+docker pull ghcr.io/korjavin/claude_connector:latest
+docker compose up -d
+```
 
 ## 5.6. Usage
 

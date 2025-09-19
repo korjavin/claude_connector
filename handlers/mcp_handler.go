@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	mcp "github.com/metoro-io/mcp-golang"
 	"github.com/metoro-io/mcp-golang/transport/http"
-	"github.com/user/claude-connector/tools"
+	"github.com/korjavin/claude_connector/tools"
 )
 
 type GetLastNRecordsArgs struct {
