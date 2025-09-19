@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  claude-connector:
+    build: .
+    container_name: claude-connector-service
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data:ro
+    env_file:
+      - .env
+    restart: unless-stopped
