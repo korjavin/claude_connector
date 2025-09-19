@@ -41,6 +41,8 @@ CSV_FILE_PATH=/data/medical_data.csv
 | MCP_SERVER_PORT | The internal port on which the Go web server will listen. This should match the container port in docker-compose.yml. | 8080 |
 | API_SECRET_KEY | A high-entropy secret key used as a Bearer token to authenticate requests from Claude. | your-super-secret-and-long-random-string |
 | CSV_FILE_PATH | The absolute path to the data file as seen from inside the Docker container. This is defined by the volume mount. | /data/medical_data.csv |
+| CLAUDE_DOMAIN | Your domain name for accessing the Claude connector (used by Traefik). | claude-connector.yourdomain.com |
+| TLS_RESOLVER | The Traefik TLS certificate resolver name for SSL certificates. | myresolver |
 
 ## 5.5. Deployment
 
@@ -70,7 +72,10 @@ This project includes three docker-compose configurations:
 
 2. **Prepare Data and Configuration**:
    - Place your sensitive CSV file inside the `data/` directory and name it `medical_data.csv`.
-   - Create the `.env` file from the template above and replace `your-super-secret-and-long-random-string` with a strong, randomly generated key.
+   - Create the `.env` file from the template above and configure:
+     - `API_SECRET_KEY`: Replace with a strong, randomly generated key
+     - `CLAUDE_DOMAIN`: Set to your actual domain name
+     - `TLS_RESOLVER`: Set to match your Traefik configuration
 
 3. **Deploy with Docker Compose**:
    From the project's root directory, run the following command:

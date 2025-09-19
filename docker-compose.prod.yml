@@ -16,9 +16,9 @@ services:
       # API_SECRET_KEY should be set via Docker secrets or environment
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.claude-connector.rule=Host(`claude-connector.your-domain.com`)"
+      - "traefik.http.routers.claude-connector.rule=Host(`${CLAUDE_DOMAIN:-claude-connector.yourdomain.com}`)"
       - "traefik.http.routers.claude-connector.entrypoints=websecure"
-      - "traefik.http.routers.claude-connector.tls.certresolver=myresolver"
+      - "traefik.http.routers.claude-connector.tls.certresolver=${TLS_RESOLVER:-myresolver}"
       - "traefik.http.services.claude-connector.loadbalancer.server.port=8080"
     networks:
       - claude-network

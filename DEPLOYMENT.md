@@ -75,6 +75,8 @@ The GitHub Actions workflow will:
    - `API_SECRET_KEY`: Your secure random string
    - `MCP_SERVER_PORT`: 8080
    - `CSV_FILE_PATH`: /data/medical_data.csv
+   - `CLAUDE_DOMAIN`: Your domain (e.g., claude-connector.yourdomain.com)
+   - `TLS_RESOLVER`: Your Traefik TLS resolver name (e.g., myresolver)
 
 4. **Create Data Directory**:
    ```bash
@@ -98,10 +100,16 @@ The GitHub Actions workflow will:
 
 2. **Create .env file**:
    ```bash
+   # Copy the production template
+   cp .env.prod.example .env
+
+   # Edit the configuration
    cat > .env << EOF
    MCP_SERVER_PORT=8080
    API_SECRET_KEY=your-very-long-secure-random-string-here
    CSV_FILE_PATH=/data/medical_data.csv
+   CLAUDE_DOMAIN=claude-connector.yourdomain.com
+   TLS_RESOLVER=myresolver
    EOF
    ```
 
