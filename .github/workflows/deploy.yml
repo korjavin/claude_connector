@@ -46,11 +46,18 @@ jobs:
           git commit -m "ci: Update image tag to ${{ github.sha }}"
           git push origin deploy --force
 
-      - name: Trigger Portainer Redeploy Webhook
-        if: ${{ secrets.PORTAINER_REDEPLOY_HOOK }}
+      - name: Trigger Portainer Redeploy Webhook (Optional)
+        continue-on-error: true
         run: |
-          curl -X POST "${{ secrets.PORTAINER_REDEPLOY_HOOK }}" \
-            -H "Content-Type: application/json" \
-            -d '{"source": "github-actions", "commit": "${{ github.sha }}"}' \
-            --fail --silent --show-error || echo "Webhook call failed, but continuing"
-          echo "Portainer webhook triggered"
+          if [ -n "$PORTAINER_HOOK" ]; then
+            echo "Triggering Portainer webhook..."
+            curl -X POST "$PORTAINER_HOOK" \
+              -H "Content-Type: application/json" \
+              -d "{\"source\": \"github-actions\", \"commit\": \"${{ github.sha }}\"}" \
+              --fail --silent --show-error || echo "Webhook call failed"
+            echo "Portainer webhook triggered"
+          else
+            echo "PORTAINER_REDEPLOY_HOOK secret not configured, skipping webhook"
+          fi
+        env:
+          PORTAINER_HOOK: ${{ secrets.PORTAINER_REDEPLOY_HOOK }}
