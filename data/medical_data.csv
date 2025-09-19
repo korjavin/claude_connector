@@ -1,0 +1,11 @@
+date,metric,value,unit,notes
+2024-09-01,heart_rate,65,bpm,Resting
+2024-09-01,blood_pressure,120/80,mmHg,Morning reading
+2024-09-02,blood_glucose,95,mg/dL,Fasting
+2024-09-03,heart_rate,72,bpm,Resting
+2024-09-03,blood_pressure,122/81,mmHg,Evening reading
+2024-09-04,weight,180,lbs,Morning weight
+2024-09-05,heart_rate,68,bpm,Resting
+2024-09-06,blood_pressure,118/79,mmHg,Morning reading
+2024-09-07,blood_glucose,105,mg/dL,Post-meal
+2024-09-08,heart_rate,75,bpm,After light exercise
