@@ -4,7 +4,7 @@ version: '3.8'
 services:
   claude-connector:
     # The image tag will be replaced by the GitHub Actions workflow
-    image: ghcr.io/korjavin/claude_connector:latest
+    image: ghcr.io/korjavin/claude_connector:62459fa4d3b7d44ed292830808175d595a34570c
     container_name: claude-connector-service
     ports:
       - "8080:8080"
