@@ -1,6 +1,6 @@
 module github.com/korjavin/claude_connector
 
-go 1.25.1
+go 1.22
 
 require (
 	github.com/gin-gonic/gin v1.10.1
