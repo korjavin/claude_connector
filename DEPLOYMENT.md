@@ -38,11 +38,24 @@ Update domain in Traefik labels:
 
 ### 3. Set Up GitHub Secrets (Optional)
 
-In your GitHub repository settings:
+#### Portainer Webhook Setup (Recommended)
 
+**Step 1: Create Webhook in Portainer**
+1. In Portainer, navigate to your deployed stack
+2. Click on the stack name to view details
+3. Go to the "Webhooks" tab
+4. Click "Add webhook"
+5. Give it a name (e.g., "github-auto-deploy")
+6. Copy the generated webhook URL (format: `https://your-portainer.domain/api/webhooks/xxx-xxx-xxx`)
+
+**Step 2: Add Secret to GitHub Repository**
 1. Go to **Settings** → **Secrets and variables** → **Actions**
-2. Add repository secret:
-   - `PORTAINER_REDEPLOY_HOOK`: Your Portainer webhook URL (if using Portainer)
+2. Click **New repository secret**
+3. Name: `PORTAINER_REDEPLOY_HOOK`
+4. Value: The webhook URL from Portainer
+5. Click **Add secret**
+
+With this setup, Portainer will automatically pull and redeploy your containers when GitHub Actions builds new images.
 
 ### 4. Enable GitHub Actions
 

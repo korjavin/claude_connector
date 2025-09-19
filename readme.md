@@ -108,9 +108,22 @@ This project includes a complete CI/CD pipeline using GitHub Actions that automa
    - `claude-connector.your-domain.com` → Your actual domain
    - `claude-network` → Your Docker network name (optional)
 
-3. **Set up Portainer Webhook (Optional)**:
-   - In Portainer, create a webhook for your stack
-   - Add the webhook URL as a GitHub secret named `PORTAINER_REDEPLOY_HOOK`
+3. **Set up Portainer Webhook (Optional but Recommended)**:
+
+   **Step 1: Create Webhook in Portainer**
+   - In Portainer, go to your deployed stack
+   - Click on the stack name to view details
+   - Go to the "Webhooks" tab
+   - Click "Add webhook"
+   - Give it a name (e.g., "github-redeploy")
+   - Copy the generated webhook URL
+
+   **Step 2: Add Secret to GitHub**
+   - In your GitHub repository: Settings > Secrets and variables > Actions
+   - Click "New repository secret"
+   - Name: `PORTAINER_REDEPLOY_HOOK`
+   - Value: The webhook URL from Portainer
+   - Click "Add secret"
 
 4. **Configure Traefik Labels (Optional)**:
    If using Traefik for reverse proxy, the docker-compose.yml already includes appropriate labels. Adjust as needed for your setup.
@@ -121,7 +134,12 @@ This project includes a complete CI/CD pipeline using GitHub Actions that automa
 2. **Build**: GitHub Actions builds the Docker image with embedded commit SHA
 3. **Push**: Image is pushed to GitHub Container Registry (ghcr.io)
 4. **Deploy**: Updates `docker-compose.yml` in `deploy` branch with new image tag
-5. **Redeploy**: (Optional) Triggers Portainer webhook to pull and restart containers
+5. **Redeploy**: (Optional) Triggers Portainer webhook to automatically pull and restart containers
+
+#### Webhook Benefits:
+- **Zero-downtime deployments**: Portainer pulls new images and restarts containers
+- **Automatic updates**: No manual intervention needed after code changes
+- **Reliable**: Webhook includes commit SHA for tracking and debugging
 
 #### Image Tagging:
 
