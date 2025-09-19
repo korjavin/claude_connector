@@ -71,12 +71,14 @@ The GitHub Actions workflow will:
 
 1. **Install Portainer** on your server
 2. **Create Stack** from the `docker-compose.yml`
-3. **Set Environment Variables**:
-   - `API_SECRET_KEY`: Your secure random string
-   - `MCP_SERVER_PORT`: 8080
-   - `CSV_FILE_PATH`: /data/medical_data.csv
+3. **Set Environment Variables in Portainer**:
+   In the Stack deployment screen, scroll down to "Environment variables" and add:
+   - `API_SECRET_KEY`: Your secure random string (REQUIRED)
    - `CLAUDE_DOMAIN`: Your domain (e.g., claude-connector.yourdomain.com)
    - `TLS_RESOLVER`: Your Traefik TLS resolver name (e.g., myresolver)
+   - `NETWORK_NAME`: Your Docker network name (e.g., claude-network)
+   - `MCP_SERVER_PORT`: 8080 (optional, has default)
+   - `CSV_FILE_PATH`: /data/medical_data.csv (optional, has default)
 
 4. **Create Data Directory**:
    ```bash
@@ -224,6 +226,10 @@ Check GitHub Actions logs:
 2. **Image not found**: Verify repository name in docker-compose.yml
 3. **Health check failed**: Check if port 8080 is accessible
 4. **CSV file not found**: Verify volume mount and file path
+5. **"FATAL: API_SECRET_KEY environment variable not set"**:
+   - In Portainer: Ensure `API_SECRET_KEY` is set in the Environment variables section
+   - For docker-compose: Ensure the .env file exists and contains `API_SECRET_KEY=your-key`
+   - Check container logs: `docker logs claude-connector-service`
 
 ## Production Checklist
 

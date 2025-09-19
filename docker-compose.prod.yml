@@ -10,10 +10,12 @@ services:
       - "8080:8080"
     volumes:
       - claude_data:/data:ro
+    env_file:
+      - .env
     environment:
-      - MCP_SERVER_PORT=8080
-      - CSV_FILE_PATH=/data/medical_data.csv
-      # API_SECRET_KEY should be set via Docker secrets or environment
+      - MCP_SERVER_PORT=${MCP_SERVER_PORT:-8080}
+      - CSV_FILE_PATH=${CSV_FILE_PATH:-/data/medical_data.csv}
+      - API_SECRET_KEY=${API_SECRET_KEY}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.claude-connector.rule=Host(`${CLAUDE_DOMAIN:-claude-connector.yourdomain.com}`)"
@@ -41,4 +43,4 @@ volumes:
 networks:
   claude-network:
     external: true
-    name: ${NETWORK_NAME}
+    name: ${NETWORK_NAME:-claude-network}
