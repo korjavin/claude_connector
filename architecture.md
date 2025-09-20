@@ -24,8 +24,9 @@ sequenceDiagram
     Cloudflare->>Server_Host: Forwards HTTP POST Request
     Server_Host->>Docker_Container: Port mapping directs request
     Docker_Container->>Go_MCP_Service: Receives HTTP request
-    Go_MCP_Service->>Go_MCP_Service: 1. Middleware validates Bearer token
-    Go_MCP_Service->>Local_Filesystem: 2. Reads medical_data.csv via volume mount
+    Go_MCP_Service->>Go_MCP_Service: 1. User authenticates via /auth/login (OAuth2 flow)
+    Go_MCP_Service->>Go_MCP_Service: 2. Middleware validates OAuth2 token
+    Go_MCP_Service->>Local_Filesystem: 3. Reads medical_data.csv via volume mount
     Local_Filesystem-->>Go_MCP_Service: Returns file content
     Go_MCP_Service->>Go_MCP_Service: 3. Processes data, extracts last 5 records
     Go_MCP_Service-->>Docker_Container: Sends HTTP response
@@ -68,7 +69,7 @@ This is the user-managed physical or virtual machine that hosts the core applica
 This is the core of the project—a custom-built application written in Go, running inside a Docker container. It implements the server-side of the Model Context Protocol. Its responsibilities are:
 
 - **HTTP Server**: To listen for incoming HTTP POST requests on a designated port within the container.
-- **Authentication Middleware**: To intercept every incoming request and validate a secret Bearer token provided in the Authorization header. This is the primary application-level security control, rejecting any unauthorized attempts to use the tool.
+- **Authentication Middleware**: To intercept every incoming request and validate the OAuth2 token. This is the primary application-level security control, rejecting any unauthorized attempts to use the tool. It also includes endpoints for the OAuth2 login and callback flow.
 - **MCP Handler**: To parse the JSON-RPC 2.0 request body, identify the specific tool being called (get_last_n_records), and correctly extract its parameters (e.g., the integer N).
 - **Tool Execution Logic**: To implement the business logic of the tool—in this case, opening the specified CSV file from the mounted volume, reading its contents, and isolating the last N records.
 - **MCP Response Formatting**: To package the retrieved data into a valid MCP tool_result content block and return it as the body of the HTTP response, which Claude then uses to formulate its final answer to the user.
@@ -87,12 +88,13 @@ The system's design prioritizes security through a layered approach, often refer
 ### 1.4.1. Request Lifecycle
 
 - **Prompt**: The user issues a prompt in the Claude.ai interface that requires the custom tool.
-- **HTTPS Request**: Claude's backend sends a secure HTTPS POST request to the Cloudflare-managed domain. The request body is a JSON-RPC payload, and the headers include the secret Authorization: Bearer <token>.
+- **Authentication**: The user first authenticates by visiting the `/auth/login` endpoint in their browser. This initiates an OAuth2 flow with Claude.ai. After successful authentication, the Go service receives an OAuth2 token.
+- **HTTPS Request**: Claude's backend sends a secure HTTPS POST request to the Cloudflare-managed domain. The request body is a JSON-RPC payload.
 - **Cloudflare Processing**: Cloudflare terminates the HTTPS connection, inspects the traffic for threats (if configured), and forwards the request as a plain HTTP POST request to the origin server's public IP address.
 - **Container Routing**: The server's OS receives the request on a public port (e.g., 8080) and, per the docker-compose.yml port mapping, routes it to the corresponding port inside the running Docker container.
 - **Application Handling**: The Go MCP service receives the request.
-- **Authentication**: The authentication middleware is the first code to execute. It inspects the Authorization header. If the token is missing or invalid, it immediately returns an HTTP 401 Unauthorized response, and the process stops.
-- **Tool Execution**: If authentication succeeds, the MCP handler parses the request, identifies the get_last_n_records tool call, and invokes the corresponding Go function.
+- **Token Validation**: The authentication middleware validates the OAuth2 token. If the token is missing or invalid, it immediately returns an HTTP 401 Unauthorized response, and the process stops.
+- **Tool Execution**: If the token is valid, the MCP handler parses the request, identifies the get_last_n_records tool call, and invokes the corresponding Go function.
 - **Data Access**: The Go function reads the medical_data.csv file from its path inside the container (e.g., /data/medical_data.csv), which maps directly to the file on the host's filesystem.
 - **Response Generation**: The function processes the data in memory, extracts the required records, and formats them into a valid MCP response structure.
 - **Secure Return Path**: The HTTP response travels back through the Docker container, the host server, and to Cloudflare. Cloudflare then encrypts the response and sends it back to the Claude.ai backend via HTTPS.
@@ -103,7 +105,7 @@ The system's design prioritizes security through a layered approach, often refer
 This architecture establishes multiple, independent layers of security to protect the sensitive medical data.
 
 - **Layer 1: Network Security (Transport Layer)**: Cloudflare's mandatory TLS/SSL encryption for all traffic to the proxied domain protects the data in transit. This mitigates the risk of man-in-the-middle (MITM) attacks and network eavesdropping between the Claude client and the user's network boundary.
-- **Layer 2: Application Security (Authentication)**: The use of a high-entropy, secret Bearer token acts as a robust authentication mechanism. While the MCP specification supports complex OAuth 2.0 flows, this is often challenging to implement correctly for private, single-user servers. For this specific use case, a static API key (Bearer token) provides an equivalent level of security against unauthorized access with significantly less complexity. An attacker would need to guess both the endpoint URL and the secret token to gain access.
+- **Layer 2: Application Security (Authentication)**: The use of OAuth 2.0 provides a robust, industry-standard authentication mechanism. The connector uses the authorization code flow to obtain an access token from Claude.ai, which is then used to authenticate requests. This is more secure than a static API key as it allows for revoking access and provides a better user experience.
 - **Layer 3: Infrastructure Security (Isolation)**: Docker containerization isolates the Go application and its dependencies from the host operating system. This prevents potential vulnerabilities in the application or its libraries from affecting the host server. Furthermore, mounting the data volume as read-only within the docker-compose.yml file can provide an additional layer of hardening, ensuring the application cannot accidentally or maliciously modify the source data file.
 - **Layer 4: Data Security (Sovereignty)**: The most critical security guarantee of this architecture is data sovereignty. The full medical_data.csv file is never transmitted over the network. It is read into the container's memory, processed locally, and only the specific, requested subset of data (the result of the tool call) is sent back to Claude. The complete dataset remains within the user's control and on their infrastructure at all times.
 
