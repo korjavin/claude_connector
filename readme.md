@@ -8,7 +8,7 @@ This project provides a secure, self-hosted Model Context Protocol (MCP) server 
 
 - **Secure Data Access**: Provides read-only access to a local CSV file. The data is processed on your server and only the requested results are sent to Claude.
 - **Single Tool**: Exposes one specific tool to Claude: `get_last_n_records`.
-- **Authentication**: All API requests are protected and require a secret Bearer token for authorization.
+- **Authentication**: All API requests are protected and require OAuth2 for authorization.
 - **Self-Hosted**: Designed to run on your own infrastructure using Docker and Docker Compose.
 
 ## 5.3. Architecture
@@ -27,11 +27,16 @@ The application is configured using environment variables. Create a `.env` file 
 # Port for the MCP server to listen on
 MCP_SERVER_PORT=8080
 
-# A strong, randomly generated secret key for authentication
-API_SECRET_KEY=your-super-secret-and-long-random-string
-
 # The path to the CSV file *inside the container*
 CSV_FILE_PATH=/data/medical_data.csv
+
+# Claude OAuth2 credentials
+CLAUDE_OAUTH_CLIENT_ID=your-claude-client-id
+CLAUDE_OAUTH_CLIENT_SECRET=your-claude-client-secret
+CLAUDE_OAUTH_REDIRECT_URL=https://<your-subdomain.your-domain.com>/auth/callback
+
+# Session secret
+SESSION_SECRET=your-super-secret-and-long-random-string
 ```
 
 ### Environment Variable Configuration
@@ -39,8 +44,11 @@ CSV_FILE_PATH=/data/medical_data.csv
 | Variable Name | Description | Example Value |
 |---------------|-------------|---------------|
 | MCP_SERVER_PORT | The internal port on which the Go web server will listen. This should match the container port in docker-compose.yml. | 8080 |
-| API_SECRET_KEY | A high-entropy secret key used as a Bearer token to authenticate requests from Claude. | your-super-secret-and-long-random-string |
 | CSV_FILE_PATH | The absolute path to the data file as seen from inside the Docker container. This is defined by the volume mount. | /data/medical_data.csv |
+| CLAUDE_OAUTH_CLIENT_ID | The OAuth2 client ID provided by Claude. | your-claude-client-id |
+| CLAUDE_OAUTH_CLIENT_SECRET | The OAuth2 client secret provided by Claude. | your-claude-client-secret |
+| CLAUDE_OAUTH_REDIRECT_URL | The OAuth2 redirect URL for your connector. | https://claude-connector.yourdomain.com/auth/callback |
+| SESSION_SECRET | A high-entropy secret key used to secure user sessions. | your-super-secret-and-long-random-string |
 | CLAUDE_DOMAIN | Your domain name for accessing the Claude connector (used by Traefik). | claude-connector.yourdomain.com |
 | TLS_RESOLVER | The Traefik TLS certificate resolver name for SSL certificates. | myresolver |
 
@@ -73,7 +81,9 @@ This project includes three docker-compose configurations:
 2. **Prepare Data and Configuration**:
    - Place your sensitive CSV file inside the `data/` directory and name it `medical_data.csv`.
    - Create the `.env` file from the template above and configure:
-     - `API_SECRET_KEY`: Replace with a strong, randomly generated key
+     - `CLAUDE_OAUTH_CLIENT_ID`: Your Claude OAuth2 client ID.
+     - `CLAUDE_OAUTH_CLIENT_SECRET`: Your Claude OAuth2 client secret.
+     - `CLAUDE_OAUTH_REDIRECT_URL`: The full redirect URL for your connector.
      - `CLAUDE_DOMAIN`: Set to your actual domain name
      - `TLS_RESOLVER`: Set to match your Traefik configuration
 
@@ -143,7 +153,8 @@ docker compose up -d
    - In your Claude.ai settings, navigate to the "Connectors" section.
    - Click "Add custom connector".
    - Enter the full URL: `https://<your-subdomain.your-domain.com>/mcp`.
-   - When prompted for authentication, provide your `API_SECRET_KEY` as a Bearer token.
+   - Before using the connector, you must authenticate. Open a new browser tab and navigate to `https://<your-subdomain.your-domain.com>/auth/login`.
+   - This will redirect you to Claude to authorize the connector. After authorization, you will be redirected back to the connector and are ready to use it.
 
 2. **Example Prompt**:
    Once the connector is successfully added, you can use the tool in your conversations with Claude. For example:

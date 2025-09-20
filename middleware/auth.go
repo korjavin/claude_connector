@@ -2,29 +2,30 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/sessions"
+	"golang.org/x/oauth2"
 )
 
-func AuthMiddleware(apiKey string) gin.HandlerFunc {
+// AuthMiddleware validates the OAuth2 token from the session
+func AuthMiddleware(store sessions.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		session, err := store.Get(c.Request, "session-name")
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to get session"})
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format. Use 'Bearer <token>'"})
+		token, ok := session.Values["token"].(*oauth2.Token)
+		if !ok || !token.Valid() {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated or token expired. Please visit /auth/login"})
 			return
 		}
 
-		if parts[1] != apiKey {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
-			return
-		}
+		// You could add more validation here, e.g., checking token claims.
+		// You can also pass the token to the context for use in handlers.
+		c.Set("token", token)
 
 		c.Next()
 	}

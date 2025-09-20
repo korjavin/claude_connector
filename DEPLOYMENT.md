@@ -73,7 +73,10 @@ The GitHub Actions workflow will:
 2. **Create Stack** from the `docker-compose.yml`
 3. **Set Environment Variables in Portainer**:
    In the Stack deployment screen, scroll down to "Environment variables" and add:
-   - `API_SECRET_KEY`: Your secure random string (REQUIRED)
+   - `CLAUDE_OAUTH_CLIENT_ID`: Your Claude OAuth2 client ID (REQUIRED)
+   - `CLAUDE_OAUTH_CLIENT_SECRET`: Your Claude OAuth2 client secret (REQUIRED)
+   - `CLAUDE_OAUTH_REDIRECT_URL`: Your Claude OAuth2 redirect URL (REQUIRED)
+   - `SESSION_SECRET`: Your secure random string for session encryption (REQUIRED)
    - `CLAUDE_DOMAIN`: Your domain (e.g., claude-connector.yourdomain.com)
    - `TLS_RESOLVER`: Your Traefik TLS resolver name (e.g., myresolver)
    - `NETWORK_NAME`: Your Docker network name (e.g., claude-network)
@@ -108,8 +111,11 @@ The GitHub Actions workflow will:
    # Edit the configuration
    cat > .env << EOF
    MCP_SERVER_PORT=8080
-   API_SECRET_KEY=your-very-long-secure-random-string-here
    CSV_FILE_PATH=/data/medical_data.csv
+   CLAUDE_OAUTH_CLIENT_ID=your-claude-client-id
+   CLAUDE_OAUTH_CLIENT_SECRET=your-claude-client-secret
+   CLAUDE_OAUTH_REDIRECT_URL=https://claude-connector.yourdomain.com/auth/callback
+   SESSION_SECRET=your-very-long-secure-random-string-here
    CLAUDE_DOMAIN=claude-connector.yourdomain.com
    TLS_RESOLVER=myresolver
    EOF
@@ -189,7 +195,7 @@ To rollback to a previous version:
 ## Security Considerations
 
 1. **Environment Variables**: Never commit the `.env` file
-2. **API Keys**: Use strong, random API keys
+2. **OAuth2 Credentials**: Keep your OAuth2 client ID and secret confidential.
 3. **Network**: Use Docker networks for isolation
 4. **Firewall**: Only expose necessary ports
 5. **Updates**: Regularly update base images and dependencies
@@ -226,16 +232,16 @@ Check GitHub Actions logs:
 2. **Image not found**: Verify repository name in docker-compose.yml
 3. **Health check failed**: Check if port 8080 is accessible
 4. **CSV file not found**: Verify volume mount and file path
-5. **"FATAL: API_SECRET_KEY environment variable not set"**:
-   - In Portainer: Ensure `API_SECRET_KEY` is set in the Environment variables section
-   - For docker-compose: Ensure the .env file exists and contains `API_SECRET_KEY=your-key`
+5. **"FATAL: CLAUDE_OAUTH_CLIENT_ID environment variable not set"**:
+   - In Portainer: Ensure `CLAUDE_OAUTH_CLIENT_ID` is set in the Environment variables section
+   - For docker-compose: Ensure the .env file exists and contains `CLAUDE_OAUTH_CLIENT_ID=your-id`
    - Check container logs: `docker logs claude-connector-service`
 
 ## Production Checklist
 
 - [ ] Repository configured with correct image name
 - [ ] GitHub Actions permissions enabled
-- [ ] API_SECRET_KEY set to secure random value
+- [ ] OAuth2 credentials set securely
 - [ ] Medical data CSV file uploaded to server
 - [ ] Domain DNS configured (if using Traefik)
 - [ ] SSL certificates configured

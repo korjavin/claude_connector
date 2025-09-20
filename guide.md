@@ -62,36 +62,60 @@ import (
 	"github.com/user/claude-connector/middleware"
 )
 
+var store *sessions.CookieStore
+
 func main() {
-	// Best practice: load configuration from environment variables
 	port := os.Getenv("MCP_SERVER_PORT")
 	if port == "" {
-		port = "8080" // Default port
+		port = "8080"
 	}
 
-	apiKey := os.Getenv("API_SECRET_KEY")
-	if apiKey == "" {
-		log.Fatal("FATAL: API_SECRET_KEY environment variable not set.")
+	clientID := os.Getenv("CLAUDE_OAUTH_CLIENT_ID")
+	if clientID == "" {
+		log.Fatal("FATAL: CLAUDE_OAUTH_CLIENT_ID environment variable not set.")
 	}
+
+	clientSecret := os.Getenv("CLAUDE_OAUTH_CLIENT_SECRET")
+	if clientSecret == "" {
+		log.Fatal("FATAL: CLAUDE_OAUTH_CLIENT_SECRET environment variable not set.")
+	}
+
+	redirectURL := os.Getenv("CLAUDE_OAUTH_REDIRECT_URL")
+    if redirectURL == "" {
+        log.Fatal("FATAL: CLAUDE_OAUTH_REDIRECT_URL environment variable not set.")
+    }
 
 	csvPath := os.Getenv("CSV_FILE_PATH")
 	if csvPath == "" {
 		log.Fatal("FATAL: CSV_FILE_PATH environment variable not set.")
 	}
 
-	// Initialize Gin router
+	sessionSecret := os.Getenv("SESSION_SECRET")
+	if sessionSecret == "" {
+		log.Fatal("FATAL: SESSION_SECRET environment variable not set.")
+	}
+	store = sessions.NewCookieStore([]byte(sessionSecret))
+
+	oauthConfig := handlers.NewOAuth2Config(clientID, clientSecret, redirectURL)
+
 	router := gin.Default()
 
-	// MCP specifies a single endpoint, typically /mcp, that handles all methods
+	authGroup := router.Group("/auth")
+	{
+		authGroup.GET("/login", func(c *gin.Context) {
+			oauthConfig.HandleLogin(c, store)
+		})
+		authGroup.GET("/callback", func(c *gin.Context) {
+			oauthConfig.HandleCallback(c, store)
+		})
+	}
+
 	mcpGroup := router.Group("/mcp")
 	{
-		// Apply the authentication middleware to this group
-		mcpGroup.Use(middleware.AuthMiddleware(apiKey))
-		// Handle all POST requests to /mcp
+		mcpGroup.Use(middleware.AuthMiddleware(store))
 		mcpGroup.POST("", handlers.MCPHandler(csvPath))
 	}
 
-	// Start the server
 	log.Printf("Starting MCP server on port %s", port)
 	if err := router.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -99,9 +123,112 @@ func main() {
 }
 ```
 
-### 2.3.2. Authentication Middleware (middleware/auth.go)
+### 2.3.2. OAuth2 Handler (handlers/oauth_handler.go)
 
-Create a new directory middleware and inside it, a file named auth.go. This middleware will protect the /mcp endpoint by validating a Bearer token on every incoming request.
+Create a new file `handlers/oauth_handler.go`. This handler will manage the OAuth2 flow with Claude.
+
+```go
+package handlers
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/gob"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/sessions"
+	"golang.org/x/oauth2"
+)
+
+func init() {
+	gob.Register(&oauth2.Token{})
+}
+
+// OAuth2Config holds the configuration for the OAuth2 client
+type OAuth2Config struct {
+	*oauth2.Config
+}
+
+// NewOAuth2Config creates a new OAuth2Config
+func NewOAuth2Config(clientID, clientSecret, redirectURL string) *OAuth2Config {
+	return &OAuth2Config{
+		Config: &oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  redirectURL,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://claude.ai/oauth/authorize",
+				TokenURL: "https://claude.ai/oauth/token",
+			},
+			Scopes: []string{"profile"},
+		},
+	}
+}
+
+// HandleLogin redirects the user to the OAuth2 provider's login page
+func (conf *OAuth2Config) HandleLogin(c *gin.Context, store sessions.Store) {
+	session, err := store.Get(c.Request, "session-name")
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to get session"})
+		return
+	}
+
+	// Generate a random state string to prevent CSRF attacks
+	b := make([]byte, 32)
+	_, err = rand.Read(b)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state"})
+		return
+	}
+	state := base64.StdEncoding.EncodeToString(b)
+	session.Values["state"] = state
+	if err := session.Save(c.Request, c.Writer); err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
+		return
+	}
+
+	url := conf.AuthCodeURL(state)
+	c.Redirect(http.StatusTemporaryRedirect, url)
+}
+
+// HandleCallback handles the callback from the OAuth2 provider
+func (conf *OAuth2Config) HandleCallback(c *gin.Context, store sessions.Store) {
+	session, err := store.Get(c.Request, "session-name")
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to get session"})
+		return
+	}
+
+	// Check that the state matches
+	state := session.Values["state"]
+	if state == nil || state.(string) != c.Query("state") {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid state"})
+		return
+	}
+
+	// Exchange the authorization code for a token
+	code := c.Query("code")
+	token, err := conf.Exchange(context.Background(), code)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+		return
+	}
+
+	session.Values["token"] = token
+	if err := session.Save(c.Request, c.Writer); err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully authenticated"})
+}
+```
+
+### 2.3.3. Authentication Middleware (middleware/auth.go)
+
+Create a new directory `middleware` and inside it, a file named `auth.go`. This middleware will protect the `/mcp` endpoint by validating the OAuth2 token from the session.
 
 ```go
 // middleware/auth.go
@@ -109,31 +236,28 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/sessions"
+	"golang.org/x/oauth2"
 )
 
-// AuthMiddleware creates a Gin middleware for API key authentication.
-func AuthMiddleware(apiKey string) gin.HandlerFunc {
+// AuthMiddleware validates the OAuth2 token from the session
+func AuthMiddleware(store sessions.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		session, err := store.Get(c.Request, "session-name")
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to get session"})
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format. Use 'Bearer <token>'"})
+		token, ok := session.Values["token"].(*oauth2.Token)
+		if !ok || !token.Valid() {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated or token expired. Please visit /auth/login"})
 			return
 		}
 
-		if parts[1] != apiKey {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
-			return
-		}
-
+		c.Set("token", token)
 		c.Next()
 	}
 }
@@ -350,11 +474,16 @@ Finally, create a .env file in the root directory to store your secrets. This fi
 # Port for the MCP server to listen on
 MCP_SERVER_PORT=8080
 
-# A strong, randomly generated secret key for authentication
-API_SECRET_KEY=your-super-secret-and-long-random-string
-
 # The path to the CSV file *inside the container*
 CSV_FILE_PATH=/data/medical_data.csv
+
+# Claude OAuth2 credentials
+CLAUDE_OAUTH_CLIENT_ID=your-claude-client-id
+CLAUDE_OAUTH_CLIENT_SECRET=your-claude-client-secret
+CLAUDE_OAUTH_REDIRECT_URL=https://<your-subdomain.your-domain.com>/auth/callback
+
+# Session secret
+SESSION_SECRET=your-super-secret-and-long-random-string
 ```
 
 ## 2.5. Deployment and Configuration
@@ -385,7 +514,7 @@ DNS propagation is typically fast but may take a few minutes.
 - Provide a name for the stack, such as claude-connector-stack.
 - In the build method section, select Web editor.
 - Copy the contents of your docker-compose.yml file and paste them into the editor.
-- Scroll down to the Environment variables section. Click Add environment variable three times and manually enter the key-value pairs from your .env file (MCP_SERVER_PORT, API_SECRET_KEY, CSV_FILE_PATH). Storing secrets this way is more secure than relying on the .env file in some Portainer setups.
+- Scroll down to the Environment variables section. Click Add environment variable and manually enter the key-value pairs from your .env file (MCP_SERVER_PORT, CSV_FILE_PATH, CLAUDE_OAUTH_CLIENT_ID, CLAUDE_OAUTH_CLIENT_SECRET, CLAUDE_OAUTH_REDIRECT_URL). Storing secrets this way is more secure than relying on the .env file in some Portainer setups.
 - At the bottom of the page, click Deploy the stack.
 
 Portainer will now pull the necessary base images, build your application image, and start the container according to your docker-compose.yml configuration. You can view the container's logs by navigating to Containers, clicking on your claude-connector-service container, and then clicking the Logs icon.
@@ -397,7 +526,8 @@ Portainer will now pull the necessary base images, build your application image,
 - Select the Connectors (or Custom Connectors) section.
 - Scroll down and click Add custom connector.
 - A dialog will appear prompting for the server URL. Enter the full, secure URL you configured in Cloudflare, including the /mcp path: https://claude-connector.yourdomain.com/mcp.
-- Claude will attempt to connect. It may prompt for authentication. Depending on the interface, you will need to specify that authentication is done via a Bearer token in the Authorization header. Enter the same secret key you defined in the API_SECRET_KEY environment variable.
+- Before using the connector, you must authenticate. Open a new browser tab and navigate to `https://<your-subdomain.your-domain.com>/auth/login`.
+- This will redirect you to Claude to authorize the connector. After authorization, you will be redirected back to the connector and are ready to use it.
 - Once successfully connected, the connector and its get_last_n_records tool will be available for use in your Claude conversations.
 
 ## 2.6. System Troubleshooting Guide
@@ -406,12 +536,13 @@ If you encounter issues, follow these steps to diagnose and resolve them.
 
 ### Error in Claude: "Connector failed to connect"
 
-- **Check Portainer Logs**: The first step is always to check the application logs. In Portainer, navigate to the container's log view. Look for any error messages at startup, such as "FATAL: API_SECRET_KEY not set" or panics related to file paths or permissions.
+- **Check Portainer Logs**: The first step is always to check the application logs. In Portainer, navigate to the container's log view. Look for any error messages at startup, such as "FATAL: CLAUDE_OAUTH_CLIENT_ID not set" or panics related to file paths or permissions.
 - **Verify Network Path with curl**: Use a command-line tool like curl from your local machine (not the server) to test the entire request path, bypassing the Claude interface. This helps isolate whether the issue is with Claude or your service.
 
 ```bash
+# First, authenticate by visiting https://claude-connector.yourdomain.com/auth/login in your browser.
+# Then, you can make a request to the /mcp endpoint.
 curl -v -X POST \
-  -H "Authorization: Bearer your-super-secret-and-long-random-string" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0", "method":"initialize", "id":1}' \
   https://claude-connector.yourdomain.com/mcp
@@ -427,9 +558,8 @@ A successful response will be a JSON object with a result key. An error will pro
 
 ### Application Responds with 401 Unauthorized
 
-- **Mismatched Keys**: This error means the Bearer token sent in the request does not match the API_SECRET_KEY expected by the server.
-- **Verify Server Key**: In Portainer, go to the stack editor or container details and verify the value of the API_SECRET_KEY environment variable.
-- **Verify Client Key**: In the Claude connector settings, re-enter the API key, ensuring there are no extra spaces or characters. If testing with curl, double-check the key in the Authorization header.
+- **Not Authenticated**: This error means you have not authenticated with the service. Visit `https://claude-connector.yourdomain.com/auth/login` in your browser to authenticate.
+- **Invalid OAuth2 Credentials**: Check the Portainer logs for errors related to OAuth2. Verify that your `CLAUDE_OAUTH_CLIENT_ID`, `CLAUDE_OAUTH_CLIENT_SECRET`, and `CLAUDE_OAUTH_REDIRECT_URL` environment variables are correct.
 
 ### Tool get_last_n_records Does Not Appear in Claude
 
