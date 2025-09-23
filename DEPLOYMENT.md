@@ -1,250 +1,104 @@
 # Deployment Guide
 
-This guide provides step-by-step instructions for deploying the Claude Connector using the automated CI/CD pipeline.
+This guide provides step-by-step instructions for deploying the Claude Connector and its associated authentication services using the provided Docker Compose files.
 
 ## Prerequisites
 
-1. **GitHub Repository**: Your code should be in a GitHub repository
-2. **Docker Server**: A server with Docker and Docker Compose installed
-3. **Domain**: A domain name managed by Cloudflare (optional but recommended)
-4. **Portainer**: Recommended for easier Docker management
+1. **Docker and Docker Compose**: Ensure your server has the latest versions installed.
+2. **Public Server**: A server with a public IP address.
+3. **Domain Name**: A custom domain is required for exposing the services securely via HTTPS.
 
-## Quick Start
+## Deployment Options
 
-### 1. Fork/Clone Repository
+This project includes two main deployment configurations:
+
+- **Local/Development**: Uses `docker-compose.dev.yml` and `docker-compose.oauth.yml`. Ideal for testing and development. It mounts local source code for live-reloading.
+- **Production**: Uses `docker-compose.prod.yml` and `docker-compose.oauth.yml`. This setup is optimized for production use, using pre-built images from a container registry.
+
+## Development Deployment
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/korjavin/claude_connector.git
 cd claude_connector
 ```
 
-### 2. Configure Repository
+### 2. Prepare Data and Environment
 
-Replace placeholders in `docker-compose.yml`:
+- Place your sensitive CSV file in the `./data` directory (e.g., `./data/medical_data.csv`).
+- Create a `.env` file if one does not exist. The only required variable for the connector itself is `CSV_FILE_PATH`, which defaults to `/data/medical_data.csv`.
+
+### 3. Launch the Stack
+
+This command will start all services, including the `claude-connector`, `hydra`, `hydra-db`, and the `consent` app.
+
+```bash
+docker compose -f docker-compose.oauth.yml -f docker-compose.dev.yml up --build -d
+```
+
+### 4. Configure the OAuth2 Client
+
+After a few moments, the `hydra-cli` service will run a script to create an OAuth2 client. Retrieve the client ID and secret with the following command:
+
+```bash
+docker logs hydra-cli
+```
+
+Save the `client_id` and `client_secret` from the output.
+
+## Production Deployment (CI/CD)
+
+The production deployment is designed to be automated via the CI/CD pipeline in `.github/workflows/deploy.yml`.
+
+### 1. Fork the Repository
+
+Fork the `korjavin/claude_connector` repository to your own GitHub account.
+
+### 2. Configure Your Domain
+
+In `docker-compose.prod.yml`, update the Traefik labels to use your domain:
 
 ```yaml
-# Already configured for korjavin:
-image: ghcr.io/korjavin/claude_connector:latest
+services:
+  claude-connector:
+    # ...
+    labels:
+      - "traefik.http.routers.claude-connector.rule=Host(`claude-connector.your-domain.com`)"
+      # ...
+  hydra:
+    # ...
+    labels:
+      - "traefik.http.routers.hydra.rule=Host(`hydra.your-domain.com`)"
+      # ...
 ```
 
-Update domain in Traefik labels:
-```yaml
-# Change this:
-- "traefik.http.routers.claude-connector.rule=Host(`claude-connector.your-domain.com`)"
+### 3. Set Up GitHub Secrets
 
-# To your domain:
-- "traefik.http.routers.claude-connector.rule=Host(`claude-connector.yourdomain.com`)"
-```
+In your forked repository's settings (**Settings** > **Secrets and variables** > **Actions**), add the following secrets:
 
-### 3. Set Up GitHub Secrets (Optional)
+- `DOCKERHUB_USERNAME`: Your Docker Hub username.
+- `DOCKERHUB_TOKEN`: Your Docker Hub access token.
+- `SERVER_HOST`: The IP address or hostname of your deployment server.
+- `SERVER_USER`: The SSH username for your server.
+- `SSH_PRIVATE_KEY`: The SSH private key to access your server.
 
-In your GitHub repository settings:
+### 4. Trigger the CI/CD Pipeline
 
-1. Go to **Settings** → **Secrets and variables** → **Actions**
-2. Add repository secret:
-   - `PORTAINER_REDEPLOY_HOOK`: Your Portainer webhook URL (if using Portainer)
+Push a commit to the `main` branch. The GitHub Actions workflow will:
+1.  Build and push the `claude-connector` Docker image to Docker Hub.
+2.  Connect to your server via SSH.
+3.  Run `docker-compose` using the `docker-compose.prod.yml` and `docker-compose.oauth.yml` files to deploy the entire stack.
 
-### 4. Enable GitHub Actions
+### 5. Configure the OAuth2 Client in Production
 
-1. Go to **Settings** → **Actions** → **General**
-2. Set **Workflow permissions** to "Read and write permissions"
-3. Save
+SSH into your server and run `docker logs hydra-cli` to get the production client ID and secret.
 
-### 5. Deploy
+## Connecting to Claude.ai
 
-Push to main branch:
-```bash
-git add .
-git commit -m "Configure deployment"
-git push origin main
-```
-
-The GitHub Actions workflow will:
-1. Build the Docker image
-2. Push it to GitHub Container Registry (GHCR)
-3. Update the deploy branch with new image tag
-4. Trigger Portainer redeploy (if configured)
-
-## Server Setup
-
-### Option 1: Using Portainer (Recommended)
-
-1. **Install Portainer** on your server
-2. **Create Stack** from the `docker-compose.yml`
-3. **Set Environment Variables in Portainer**:
-   In the Stack deployment screen, scroll down to "Environment variables" and add:
-   - `CLAUDE_OAUTH_CLIENT_ID`: Your Claude OAuth2 client ID (REQUIRED)
-   - `CLAUDE_OAUTH_CLIENT_SECRET`: Your Claude OAuth2 client secret (REQUIRED)
-   - `CLAUDE_OAUTH_REDIRECT_URL`: Your Claude OAuth2 redirect URL (REQUIRED)
-   - `SESSION_SECRET`: Your secure random string for session encryption (REQUIRED)
-   - `CLAUDE_DOMAIN`: Your domain (e.g., claude-connector.yourdomain.com)
-   - `TLS_RESOLVER`: Your Traefik TLS resolver name (e.g., myresolver)
-   - `NETWORK_NAME`: Your Docker network name (e.g., claude-network)
-   - `MCP_SERVER_PORT`: 8080 (optional, has default)
-   - `CSV_FILE_PATH`: /data/medical_data.csv (optional, has default)
-
-4. **Create Data Directory**:
-   ```bash
-   sudo mkdir -p /opt/claude-connector/data
-   sudo chown -R $USER:$USER /opt/claude-connector/data
-   # Copy your CSV file to this location
-   cp your-medical-data.csv /opt/claude-connector/data/medical_data.csv
-   ```
-
-5. **Volume Configuration**:
-   The docker-compose.yml uses a named volume that binds to `/opt/claude-connector/data` on the host
-
-### Option 2: Direct Docker Compose
-
-1. **Clone on Server**:
-   ```bash
-   git clone https://github.com/korjavin/claude_connector.git
-   cd claude_connector
-   git checkout deploy  # Use the deploy branch for latest image
-   ```
-
-2. **Create .env file**:
-   ```bash
-   # Copy the production template
-   cp .env.prod.example .env
-
-   # Edit the configuration
-   cat > .env << EOF
-   MCP_SERVER_PORT=8080
-   CSV_FILE_PATH=/data/medical_data.csv
-   CLAUDE_OAUTH_CLIENT_ID=your-claude-client-id
-   CLAUDE_OAUTH_CLIENT_SECRET=your-claude-client-secret
-   CLAUDE_OAUTH_REDIRECT_URL=https://claude-connector.yourdomain.com/auth/callback
-   SESSION_SECRET=your-very-long-secure-random-string-here
-   CLAUDE_DOMAIN=claude-connector.yourdomain.com
-   TLS_RESOLVER=myresolver
-   EOF
-   ```
-
-3. **Deploy**:
-   ```bash
-   docker compose pull
-   docker compose up -d
-   ```
-
-## Traefik Configuration (Optional)
-
-If using Traefik for reverse proxy and SSL:
-
-1. **Create Network**:
-   ```bash
-   docker network create claude-network
-   ```
-
-2. **Traefik Labels** are already configured in `docker-compose.yml`
-
-3. **Update Domain**: Replace `claude-connector.your-domain.com` with your domain
-
-## Monitoring
-
-### Health Check
-
-The application includes a health endpoint:
-```bash
-curl http://your-server:8080/health
-```
-
-Response:
-```json
-{
-  "status": "ok",
-  "commit": "abc123def456",
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-### Logs
-
-View logs with:
-```bash
-docker compose logs -f claude-connector
-```
-
-## CI/CD Workflow
-
-### Automatic Deployment
-
-1. **Trigger**: Push to `main` branch
-2. **Build**: Creates Docker image with commit SHA
-3. **Push**: Uploads to `ghcr.io/username/claude_connector`
-4. **Update**: Updates `deploy` branch with new image tag
-5. **Deploy**: Triggers Portainer webhook (optional)
-
-### Manual Deployment
-
-Trigger manually in GitHub:
-1. Go to **Actions** tab
-2. Select **Deploy Claude Connector** workflow
-3. Click **Run workflow**
-
-### Rollback
-
-To rollback to a previous version:
-1. Find the commit SHA of the previous version
-2. Update docker-compose.yml manually:
-   ```yaml
-   image: ghcr.io/username/claude_connector:PREVIOUS_COMMIT_SHA
-   ```
-3. Redeploy
-
-## Security Considerations
-
-1. **Environment Variables**: Never commit the `.env` file
-2. **OAuth2 Credentials**: Keep your OAuth2 client ID and secret confidential.
-3. **Network**: Use Docker networks for isolation
-4. **Firewall**: Only expose necessary ports
-5. **Updates**: Regularly update base images and dependencies
-
-## Troubleshooting
-
-### Build Failures
-
-Check GitHub Actions logs:
-1. Go to **Actions** tab
-2. Click on failed workflow
-3. Review build logs
-
-### Deployment Issues
-
-1. **Check image exists**:
-   ```bash
-   docker pull ghcr.io/korjavin/claude_connector:latest
-   ```
-
-2. **Verify environment variables**:
-   ```bash
-   docker compose config
-   ```
-
-3. **Check logs**:
-   ```bash
-   docker compose logs claude-connector
-   ```
-
-### Common Issues
-
-1. **Permission denied**: Check GitHub token permissions
-2. **Image not found**: Verify repository name in docker-compose.yml
-3. **Health check failed**: Check if port 8080 is accessible
-4. **CSV file not found**: Verify volume mount and file path
-5. **"FATAL: CLAUDE_OAUTH_CLIENT_ID environment variable not set"**:
-   - In Portainer: Ensure `CLAUDE_OAUTH_CLIENT_ID` is set in the Environment variables section
-   - For docker-compose: Ensure the .env file exists and contains `CLAUDE_OAUTH_CLIENT_ID=your-id`
-   - Check container logs: `docker logs claude-connector-service`
-
-## Production Checklist
-
-- [ ] Repository configured with correct image name
-- [ ] GitHub Actions permissions enabled
-- [ ] OAuth2 credentials set securely
-- [ ] Medical data CSV file uploaded to server
-- [ ] Domain DNS configured (if using Traefik)
-- [ ] SSL certificates configured
-- [ ] Firewall rules configured
-- [ ] Monitoring and logs set up
-- [ ] Backup strategy for data directory
+1.  In your Claude.ai settings, add a new custom connector.
+2.  Set the **URL** to your public MCP endpoint (e.g., `https://claude-connector.your-domain.com/mcp`).
+3.  Set the **Authentication** to "OAuth 2.0" with the "Client Credentials" grant type.
+4.  Provide the **Client ID** and **Client Secret** you obtained from the `hydra-cli` logs.
+5.  Set the **Token URL** to your public Hydra token endpoint (e.g., `https://hydra.your-domain.com/oauth2/token`).
+6.  Save and enable the connector.

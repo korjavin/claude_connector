@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  hydra-db:
+    image: postgres:14-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: hydra
+      POSTGRES_PASSWORD: secret-password
+      POSTGRES_DB: hydra
+    volumes:
+      - hydra-db-data:/var/lib/postgresql/data
+    networks:
+      - hydra-network
+    restart: unless-stopped
+
+  hydra-cli:
+    image: oryd/hydra:v2.2.0
+    depends_on:
+      - hydra
+    command: /bin/sh -c "sleep 5 && /scripts/configure-hydra.sh"
+    volumes:
+      - ./scripts:/scripts
+    networks:
+      - hydra-network
+    restart: on-failure
+
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    depends_on:
+      - hydra-db
+    environment:
+      DSN: postgres://hydra:secret-password@hydra-db:5432/hydra?sslmode=disable
+    command: migrate sql -e --yes
+    networks:
+      - hydra-network
+    restart: on-failure
+
+  hydra:
+    image: oryd/hydra:v2.2.0
+    depends_on:
+      - hydra-migrate
+    ports:
+      - "4444:4444" # Public port
+      - "4445:4445" # Admin port
+    environment:
+      DSN: postgres://hydra:secret-password@hydra-db:5432/hydra?sslmode=disable
+      URLS_SELF_ISSUER: http://127.0.0.1:4444
+      URLS_CONSENT: http://127.0.0.1:3000/consent
+      URLS_LOGIN: http://127.0.0.1:3000/login
+      SECRETS_SYSTEM: you-should-use-a-more-secure-secret
+      OAUTH2_CLIENT_REGISTRATION_URL: http://localhost:4445/clients
+    networks:
+      - hydra-network
+    restart: unless-stopped
+
+  consent:
+    image: oryd/hydra-login-consent-node:v2.2.0
+    environment:
+      HYDRA_ADMIN_URL: http://hydra:4445
+    ports:
+      - "3000:3000"
+    networks:
+      - hydra-network
+    restart: unless-stopped
+
+networks:
+  hydra-network:
+    driver: bridge
+
+volumes:
+  hydra-db-data:

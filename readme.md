@@ -8,18 +8,18 @@ This project provides a secure, self-hosted Model Context Protocol (MCP) server 
 
 - **Secure Data Access**: Provides read-only access to a local CSV file. The data is processed on your server and only the requested results are sent to Claude.
 - **Single Tool**: Exposes one specific tool to Claude: `get_last_n_records`.
-- **Authentication**: All API requests are protected and require OAuth2 for authorization.
+- **Authentication**: Uses Ory Hydra, a certified OAuth 2.0 and OpenID Connect provider, for secure, token-based authentication.
 - **Self-Hosted**: Designed to run on your own infrastructure using Docker and Docker Compose.
 
 ## 5.3. Architecture
 
-The system uses a layered architecture to ensure security and reliability. A request from Claude is securely routed through Cloudflare (for TLS encryption and proxying) to the Go application running in a Docker container on your server. The application authenticates the request, processes the local data file, and returns a secure response.
+The system uses a layered architecture to ensure security and reliability. It includes the Go connector, an Ory Hydra instance for OAuth2, and a consent application. A request from Claude is securely routed through Cloudflare to the Go application, which validates the provided JWT with Hydra before processing the request.
 
 For a detailed breakdown of the components, data flow, and security model, please see [architecture.md](architecture.md).
 
 ## 5.4. Configuration
 
-The application is configured using environment variables. Create a `.env` file in the root of the project directory by copying the example below. Do not commit the `.env` file to version control.
+The application is configured using environment variables. Create a `.env` file in the root of the project directory.
 
 ### .env file example:
 
@@ -29,28 +29,16 @@ MCP_SERVER_PORT=8080
 
 # The path to the CSV file *inside the container*
 CSV_FILE_PATH=/data/medical_data.csv
-
-# Claude OAuth2 credentials
-CLAUDE_OAUTH_CLIENT_ID=your-claude-client-id
-CLAUDE_OAUTH_CLIENT_SECRET=your-claude-client-secret
-CLAUDE_OAUTH_REDIRECT_URL=https://<your-subdomain.your-domain.com>/auth/callback
-
-# Session secret
-SESSION_SECRET=your-super-secret-and-long-random-string
 ```
+
+The OAuth2 provider (Ory Hydra) is configured via `docker-compose.oauth.yml` and the `scripts/configure-hydra.sh` script.
 
 ### Environment Variable Configuration
 
 | Variable Name | Description | Example Value |
 |---------------|-------------|---------------|
-| MCP_SERVER_PORT | The internal port on which the Go web server will listen. This should match the container port in docker-compose.yml. | 8080 |
-| CSV_FILE_PATH | The absolute path to the data file as seen from inside the Docker container. This is defined by the volume mount. | /data/medical_data.csv |
-| CLAUDE_OAUTH_CLIENT_ID | The OAuth2 client ID provided by Claude. | your-claude-client-id |
-| CLAUDE_OAUTH_CLIENT_SECRET | The OAuth2 client secret provided by Claude. | your-claude-client-secret |
-| CLAUDE_OAUTH_REDIRECT_URL | The OAuth2 redirect URL for your connector. | https://claude-connector.yourdomain.com/auth/callback |
-| SESSION_SECRET | A high-entropy secret key used to secure user sessions. | your-super-secret-and-long-random-string |
-| CLAUDE_DOMAIN | Your domain name for accessing the Claude connector (used by Traefik). | claude-connector.yourdomain.com |
-| TLS_RESOLVER | The Traefik TLS certificate resolver name for SSL certificates. | myresolver |
+| MCP_SERVER_PORT | The internal port on which the Go web server will listen. | 8080 |
+| CSV_FILE_PATH | The absolute path to the data file as seen from inside the Docker container. | /data/medical_data.csv |
 
 ## 5.5. Deployment
 
@@ -74,27 +62,18 @@ This project includes three docker-compose configurations:
 
 1. **Clone the Repository**:
    ```bash
-   git clone <repository-url>
-   cd claude-connector
+   git clone https://github.com/korjavin/claude_connector.git
+   cd claude_connector
    ```
 
 2. **Prepare Data and Configuration**:
    - Place your sensitive CSV file inside the `data/` directory and name it `medical_data.csv`.
-   - Create the `.env` file from the template above and configure:
-     - `CLAUDE_OAUTH_CLIENT_ID`: Your Claude OAuth2 client ID.
-     - `CLAUDE_OAUTH_CLIENT_SECRET`: Your Claude OAuth2 client secret.
-     - `CLAUDE_OAUTH_REDIRECT_URL`: The full redirect URL for your connector.
-     - `CLAUDE_DOMAIN`: Set to your actual domain name
-     - `TLS_RESOLVER`: Set to match your Traefik configuration
+   - Create the `.env` file if it doesn't exist.
 
 3. **Deploy with Docker Compose**:
-   From the project's root directory, run the following command:
+   From the project's root directory, run the following command to bring up the entire stack, including the connector, Ory Hydra, and the consent app:
    ```bash
-   # For local development (uses ./data directory)
-   docker compose -f docker-compose.dev.yml up --build -d
-
-   # For production (uses named volume bound to /opt/claude-connector/data)
-   docker compose up -d
+   docker compose -f docker-compose.oauth.yml -f docker-compose.dev.yml up --build -d
    ```
 
 4. **Configure Cloudflare and Portainer**:
@@ -149,14 +128,18 @@ docker compose up -d
 
 ## 5.6. Usage
 
-1. **Add Connector to Claude**:
+1. **Configure an OAuth2 Client in Hydra**:
+   - The `docker-compose` setup automatically runs a script to create a client. You can see the client ID and secret in the logs of the `hydra-cli` container: `docker logs hydra-cli`.
+   - You will need to provide this Client ID and Secret to Claude in the connector settings.
+
+2. **Add Connector to Claude**:
    - In your Claude.ai settings, navigate to the "Connectors" section.
    - Click "Add custom connector".
-   - Enter the full URL: `https://<your-subdomain.your-domain.com>/mcp`.
-   - Before using the connector, you must authenticate. Open a new browser tab and navigate to `https://<your-subdomain.your-domain.com>/auth/login`.
-   - This will redirect you to Claude to authorize the connector. After authorization, you will be redirected back to the connector and are ready to use it.
+   - Enter the full URL for the MCP endpoint: `https://<your-subdomain.your-domain.com>/mcp`.
+   - In the advanced settings, provide the OAuth2 Client ID and Secret you obtained from the `hydra-cli` logs.
+   - The token endpoint URL will be `https://<your-hydra-domain>/oauth2/token`.
 
-2. **Example Prompt**:
+3. **Example Prompt**:
    Once the connector is successfully added, you can use the tool in your conversations with Claude. For example:
 
    > "Using my medical data connector, please get the last 5 records and summarize them."
