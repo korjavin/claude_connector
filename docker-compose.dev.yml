@@ -14,6 +14,8 @@ services:
     restart: unless-stopped
     environment:
       - GIN_MODE=debug  # Enable debug mode for development
+    networks:
+      - hydra-network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 10s
@@ -21,4 +23,6 @@ services:
       retries: 3
       start_period: 10s
 
-# No external networks needed for development
+networks:
+  hydra-network:
+    external: true

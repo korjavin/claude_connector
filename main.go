@@ -19,11 +19,6 @@ func main() {
 		port = "8080"
 	}
 
-	apiKey := os.Getenv("API_SECRET_KEY")
-	if apiKey == "" {
-		log.Fatal("FATAL: API_SECRET_KEY environment variable not set.")
-	}
-
 	csvPath := os.Getenv("CSV_FILE_PATH")
 	if csvPath == "" {
 		log.Fatal("FATAL: CSV_FILE_PATH environment variable not set.")
@@ -45,7 +40,7 @@ func main() {
 
 	mcpGroup := router.Group("/mcp")
 	{
-		mcpGroup.Use(middleware.AuthMiddleware(apiKey))
+		mcpGroup.Use(middleware.AuthMiddleware())
 		mcpGroup.POST("", handlers.MCPHandler(csvPath))
 	}
 
